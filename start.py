@@ -126,15 +126,81 @@ def _collect_lan_ipv4() -> list[str]:
     return _sort_lan_by_preference(found)
 
 
-def _from_windows_ipconfig(text: str) -> list[str]:
-    out: list[str] = []
-    for m in re.finditer(
-        r"(?<![\d.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?![\d.])",
-        text,
+def _is_windows_ipconfig_skip_line(line: str) -> bool:
+    """
+    Строка ipconfig не про IP этого ПК: шлюз, DNS, DHCP-сервер (часто 192.168.0.1 = роутер).
+    """
+    s = line.casefold()
+    for needle in (
+        "default gateway",
+        "dns servers",
+        "список dns",
+        "dhcp server",
+        "wins",
     ):
-        s = m.group(1)
-        if _is_private_unicast(s) and s not in out:
-            out.append(s)
+        if needle in s:
+            return True
+    for needle in (
+        "dns-сервер",
+        "сервер dhcp",
+    ):
+        if needle in s:
+            return True
+    # RU: «Основной шлюз» — без "IPv4" в этой же строке
+    if "шлюз" in s and "ipv4" not in s and "ip-" not in s:
+        return True
+    if "основн" in s and "шлюз" in s and "ipv4" not in s:
+        return True
+    if "сервер" in s and "dns" in s and "шлюз" not in s:
+        return True
+    return False
+
+
+def _is_windows_ipconfig_ipv4_address_line(line: str) -> bool:
+    """
+    Похоже на штатную строку с IPv4-адресом интерфейса, а не на маску/шлюз.
+    en + ru, частые варианты Windows 10/11.
+    """
+    t = line
+    if re.search(
+        r"(?i)IPv4[\s.·-]*[Aa]ddress|IPv4-адрес|Адрес[\s.·]*IPv4|IP-адреса?\s*IPv4",
+        t,
+    ):
+        return True
+    if re.search(r"(?i)IPv4[\s.·-]*адрес", t):
+        return True
+    return False
+
+
+def _from_windows_ipconfig(text: str) -> list[str]:
+    """
+    Только IP этого компьютера. Раньше из всего вывода цеплялся, например, 192.168.0.1 с
+    «Default Gateway».
+    """
+    out: list[str] = []
+
+    def extract_from_line(line: str, bucket: list[str]) -> None:
+        for m in re.finditer(
+            r"(?<![\d.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?![\d.])",
+            line,
+        ):
+            s = m.group(1)
+            if _is_private_unicast(s) and s not in bucket:
+                bucket.append(s)
+
+    for line in text.splitlines():
+        if _is_windows_ipconfig_skip_line(line):
+            continue
+        if not _is_windows_ipconfig_ipv4_address_line(line):
+            continue
+        extract_from_line(line, out)
+    if out:
+        return out
+    for line in text.splitlines():
+        if _is_windows_ipconfig_skip_line(line):
+            continue
+        # запас: без «IPv4» в подписи, но после фильтра шлюза/DNS
+        extract_from_line(line, out)
     return out
 
 
