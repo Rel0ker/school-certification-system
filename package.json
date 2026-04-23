@@ -1,0 +1,12 @@
+{
+  "name": "sh-attestation",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Обновление vendor/sql-wasm* из пакета sql.js (по желанию)",
+  "scripts": {
+    "update-vendor": "cp node_modules/sql.js/dist/sql-wasm.js vendor/ && cp node_modules/sql.js/dist/sql-wasm.wasm vendor/"
+  },
+  "devDependencies": {
+    "sql.js": "^1.11.0"
+  }
+}

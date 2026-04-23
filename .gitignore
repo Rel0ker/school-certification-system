@@ -1,0 +1,11 @@
+node_modules/
+data/
+.DS_Store
+__pycache__/
+*.py[cod]
+.env
+.env.*
+.cursor/
+
+# случайный артефакт (имя как у in-memory SQLite)
+::memory:

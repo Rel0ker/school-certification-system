@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Школьная аттестация</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div class="app-brand">
+          <h1 class="app-title">Система промежуточной аттестации</h1>
+        </div>
+        <div class="app-header__tail">
+          <div class="header-print no-print" aria-label="Печать отчётов">
+            <div class="header-print__group">
+              <span class="header-print__kicker">Печать</span>
+              <div class="header-print__row">
+                <button type="button" class="btn btn--on-header" id="printCurrentViewBtn" title="Все таблицы на открытой странице">
+                  Страница
+                </button>
+                <details class="print-menu">
+                  <summary class="print-menu__summary">Все варианты</summary>
+              <div class="print-menu__panel" role="group" aria-label="Дополнительные варианты печати">
+                <p class="print-menu__label">Сводно</p>
+                <button type="button" class="print-menu__item" data-print="current-view">Всё на открытой странице</button>
+                <button type="button" class="print-menu__item" data-print="full">Полный отчёт (все разделы)</button>
+                <p class="print-menu__label">Сводка (завуч)</p>
+                <button type="button" class="print-menu__item" data-print="zavuch-stats">Сводка: показатели и обе таблицы</button>
+                <button type="button" class="print-menu__item" data-print="zavuch-teacher">Сводка: только «Преподаватели»</button>
+                <button type="button" class="print-menu__item" data-print="zavuch-class">Сводка: только «Классы»</button>
+                <button type="button" class="print-menu__item" data-print="zavuch-all">Сводка + таблица классных (без импорта)</button>
+                <button type="button" class="print-menu__item" data-print="advisors">Только таблица классных</button>
+                <p class="print-menu__label">Разделы</p>
+                <button type="button" class="print-menu__item" data-print="subject">Таблица по предмету (текущий преподаватель)</button>
+                <button type="button" class="print-menu__item" data-print="class">Журнал класса (текущий класс)</button>
+              </div>
+                </details>
+              </div>
+            </div>
+          </div>
+          <nav class="role-nav no-print" id="publicNav" aria-label="Разделы">
+            <button type="button" class="role-nav__btn" data-hash="teacher" id="navTeacher">Преподаватели</button>
+            <button type="button" class="role-nav__btn" data-hash="journal" id="navJournal">Журнал класса</button>
+          </nav>
+          <p class="admin-header-label no-print" id="adminNav" hidden>Администрирование</p>
+          <p id="printDateLine" class="print-only" aria-hidden="true"></p>
+          <p id="syncStatus" class="sync-status sync-status--muted no-print" role="status">…</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <!-- Завуч -->
+      <div id="view-zavuch" class="view" data-view-panel="zavuch" hidden>
+        <div class="layout">
+          <section class="panel panel--accent print-skip">
+            <div class="panel__head">
+              <h2 class="panel__title">Импорт таблиц (XML)</h2>
+            </div>
+            <div class="upload-grid">
+              <label class="field field--file">
+                <span class="field__label">Список учеников по классам</span>
+                <input id="studentsFile" type="file" accept=".xml,text/xml" />
+                <span class="field__hint">Ожидаются столбцы: Класс, ФИО ребенка (или аналог)</span>
+              </label>
+              <label class="field field--file">
+                <span class="field__label">Нагрузка: класс / предмет / учитель</span>
+                <input id="subjectsFile" type="file" accept=".xml,text/xml" />
+                <span class="field__hint">Столбцы: Класс, Предмет, Учитель</span>
+              </label>
+            </div>
+            <div id="importStatus" class="status status-muted">Файлы пока не загружены.</div>
+          </section>
+
+          <section class="panel" id="printRegionZavuchStats">
+            <div class="panel__head panel__head--with-action">
+              <h2 class="panel__title">Сводка: кто что заполнил</h2>
+              <div class="panel__action no-print">
+                <span class="panel__action-label">Печать:</span>
+                <button type="button" class="btn btn--small btn--secondary" data-print="zavuch-stats">вся сводка</button>
+                <button type="button" class="btn btn--small btn--secondary" data-print="zavuch-teacher">преподаватели</button>
+                <button type="button" class="btn btn--small btn--secondary" data-print="zavuch-class">классы</button>
+              </div>
+            </div>
+            <div id="zavuchStats" class="zavuch-stats" aria-live="polite">
+              <p class="empty-hint">Загрузите XML и настройте классных, чтобы увидеть статистику.</p>
+            </div>
+          </section>
+
+          <section class="panel" id="printRegionAdvisors">
+            <div class="panel__head panel__head--with-action">
+              <h2 class="panel__title">Классы</h2>
+              <div class="panel__action no-print">
+                <span class="panel__action-label">Печать:</span>
+                <button type="button" class="btn btn--small btn--secondary" data-print="zavuch-all">сводка + эта таблица</button>
+                <button type="button" class="btn btn--small btn--secondary" data-print="advisors">только эта таблица</button>
+              </div>
+            </div>
+            <div class="controls-row print-skip">
+              <button id="addAdvisorBtn" class="btn btn--secondary" type="button">Добавить класс</button>
+              <button id="saveAdvisorsBtn" class="btn" type="button">Сохранить</button>
+            </div>
+            <div class="table-wrap table-wrap--rounded">
+              <table id="advisorsTable" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Класс</th>
+                    <th>Классный руководитель</th>
+                    <th class="th-narrow print-col-hide">Действие</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel panel--soft print-skip">
+            <div class="panel__head">
+              <h2 class="panel__title">Резервная копия</h2>
+            </div>
+            <div class="controls-row controls-row--spaced">
+              <button id="exportBtn" class="btn" type="button">Экспорт JSON</button>
+              <label class="field field--inline-file">
+                <span class="field__label">Импорт JSON</span>
+                <input id="importJsonFile" type="file" accept=".json,application/json" />
+              </label>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- Преподаватели (предметники) -->
+      <div id="view-teacher" class="view view--active" data-view-panel="teacher">
+        <div class="layout layout--narrow print-block-start" id="printRegionSubjectWrap">
+          <section class="panel panel--hero">
+            <div class="panel__head panel__head--with-action">
+              <h2 class="panel__title">Ввод по предмету</h2>
+              <div class="panel__action no-print">
+                <button type="button" class="btn btn--small btn--secondary" data-print="subject" title="Текущий преподаватель">Печать таблицы</button>
+              </div>
+            </div>
+            <div class="filters print-skip">
+              <label class="field field--grow">
+                <span class="field__label">Преподаватель</span>
+                <select id="teacherSelect" class="input-control">
+                  <option value="">Выберите из списка</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-wrap table-wrap--rounded table-wrap--shadow" id="printRegionSubject">
+              <table id="subjectTable" class="data-table data-table--tight data-table--full-headers">
+                <thead>
+                  <tr>
+                    <th>Класс</th>
+                    <th>Предмет</th>
+                    <th>Количество учеников в классе</th>
+                    <th>Выполняли аттестацию (чел.)</th>
+                    <th>Подтвердили/повысили (чел.)</th>
+                    <th>Доля подтвердивших, %</th>
+                    <th>С оценкой 5 (чел.)</th>
+                    <th>С оценкой 4 (чел.)</th>
+                    <th>С оценкой 3 (чел.)</th>
+                    <th>С оценкой 2 (чел.)</th>
+                    <th>Не пришли (чел.)</th>
+                    <th>Процент качества, %</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="4">
+                      <strong>Итого: подтвердили/повысили, чел. (по выбранному преподавателю)</strong>
+                    </td>
+                    <td id="confirmedTotal">0</td>
+                    <td colspan="7" aria-hidden="true"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="view-advisor" class="view" data-view-panel="advisor" hidden>
+        <div class="layout layout--narrow print-block-start" id="printRegionClassWrap">
+          <section class="panel panel--hero">
+            <div class="panel__head panel__head--with-action">
+              <h2 class="panel__title">Журнал класса</h2>
+              <div class="panel__action no-print">
+                <button type="button" class="btn btn--small btn--secondary" data-print="class" title="Текущий класс">Печать таблицы</button>
+              </div>
+            </div>
+            <div class="filters print-skip">
+              <label class="field field--grow">
+                <span class="field__label">Класс</span>
+                <select id="journalClassSelect" class="input-control">
+                  <option value="">— Загрузите XML учеников, затем выберите класс —</option>
+                </select>
+              </label>
+            </div>
+            <div id="advisorInfo" class="status status-muted print-skip">Класс не выбран.</div>
+            <div class="table-wrap table-wrap--rounded table-wrap--shadow" id="printRegionClass">
+              <table id="classTable" class="data-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div
+        id="printFullReportRoot"
+        class="print-full-report-root"
+        hidden
+        aria-hidden="true"
+        aria-label="Составной отчёт для печати"
+      ></div>
+    </main>
+
+    <script src="./vendor/sql-wasm.js"></script>
+    <script src="./db.js"></script>
+    <script src="./app.js" defer></script>
+  </body>
+  </html>
