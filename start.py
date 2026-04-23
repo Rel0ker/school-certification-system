@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Единая точка запуска: мини‑сервер + открытие браузера. База в браузере, Node не нужен.
+# Сборка .exe: см. attestation.spec и build_windows.cmd (PyInstaller).
 import http.server
 import ipaddress
 import os
@@ -9,10 +10,18 @@ import socketserver
 import subprocess
 import sys
 import webbrowser
+from pathlib import Path
 
 PORT = int(os.environ.get("PORT", "8080"))
-ROOT = os.path.dirname(os.path.abspath(__file__))
 
+
+def _application_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parent
+
+
+ROOT = str(_application_dir())
 os.chdir(ROOT)
 
 
@@ -97,7 +106,36 @@ def _collect_lan_ipv4() -> list[str]:
         except (OSError, subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
+    if sys.platform == "win32":
+        _kw: dict = {}
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            _kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        try:
+            r = subprocess.run(
+                ["ipconfig"],
+                capture_output=True,
+                text=True,
+                timeout=6,
+                **_kw,
+            )
+            for ip in _from_windows_ipconfig((r.stdout or "") + (r.stderr or "")):
+                add(ip)
+        except (OSError, subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
     return _sort_lan_by_preference(found)
+
+
+def _from_windows_ipconfig(text: str) -> list[str]:
+    out: list[str] = []
+    for m in re.finditer(
+        r"(?<![\d.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?![\d.])",
+        text,
+    ):
+        s = m.group(1)
+        if _is_private_unicast(s) and s not in out:
+            out.append(s)
+    return out
 
 
 def _sort_lan_by_preference(ips: list[str]) -> list[str]:
@@ -166,7 +204,10 @@ if __name__ == "__main__":
         httpd = socketserver.TCPServer(("", PORT), Handler)
     except OSError as e:
         print(f"Порт {PORT} занят или недоступен: {e}")
-        print("Укажите другой, например: PORT=8090 python3 start.py")
+        if sys.platform == "win32":
+            print("Укажите другой:  set PORT=8090  и снова запустите SchoolAttestation.exe")
+        else:
+            print("Укажите другой:  PORT=8090 python3 start.py")
         raise SystemExit(1) from e
     with httpd:
         open_url = (
