@@ -21,7 +21,6 @@ def _collect_lan_ipv4() -> list[str]:
     """IP адреса в локальной сети, порядок: типичный default route, затем остальные."""
     found: list[str] = []
     seen: set[str] = set()
-    # Часто наиболее «правильный» IP для обхода в сторону интернета
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(0.3)
@@ -33,7 +32,6 @@ def _collect_lan_ipv4() -> list[str]:
             found.append(ip)
     except OSError:
         pass
-    # Доп. интерфейсы (Wi‑Fi + Ethernet, VPN и т.д.)
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET, socket.SOCK_STREAM):
             ip = info[4][0]
@@ -47,39 +45,68 @@ def _collect_lan_ipv4() -> list[str]:
     return found
 
 
-def _print_entry_lines(port: int) -> None:
-    """Три готовых URL для копирования: localhost, 127.0.0.1, IP в ЛС."""
-    lan = _collect_lan_ipv4()
-    lan_ip = lan[0] if lan else None
-    a = f"http://127.0.0.1:{port}/"
-    b = f"http://localhost:{port}/"
-    c = f"http://{lan_ip}:{port}/" if lan_ip else None
+def _role_urls(base: str) -> tuple[str, str, str]:
+    b = base.rstrip("/")
+    return (
+        f"{b}/#/admin",
+        f"{b}/#/teacher",
+        f"{b}/#/journal",
+    )
 
-    line = "─" * 62
+
+def _print_lan_for_others(port: int) -> None:
+    """Ссылки для учителей/завуча: только адреса в ЛС с нужным hash (не localhost)."""
+    lan = _collect_lan_ipv4()
+    line = "─" * 64
     print()
     print(line)
-    print("  Адреса (скопируйте целиком):")
+    print("  Ссылки для других устройств в вашей сети (копируйте и отправляйте):")
     print()
-    print("  1) ", a, sep="")
-    print("  2) ", b, sep="")
-    if c:
-        print(f"  3) {c}    ← для телефонов и других ПК в той же Wi‑Fi/сети")
-    else:
-        print(
-            "  3)  (IP в локальной сети не определён — раздача Wi‑Fi, другой ПК, VPN?)",
-        )
-    if len(lan) > 1:
+    if not lan:
+        print("  (IP в локальной сети не найден: проверьте Wi‑Fi / VPN. Без IP коллеги")
+        print("   с другого ПК не подключатся — раздайте сеть с этого компьютера или")
+        print("   укажите IP вручную, подставляя пути /#/admin, /#/teacher, /#/journal)")
         print()
-        print("  Дополнительные IP этого компьютера (тот же порт):")
-        for ip in lan[1:]:
-            print(f"      http://{ip}:{port}/")
+        print(line)
+        print()
+        return
+
+    for idx, ip in enumerate(lan):
+        base = f"http://{ip}:{port}"
+        a_admin, a_teacher, a_journal = _role_urls(base)
+        if len(lan) > 1:
+            print(f"  {'─' * 6}  {ip}  {'─' * 40}")
+        else:
+            print(f"  IP в вашей сети:  {ip}")
+        print()
+        print("  Админ (завуч, сводка, импорт XML):")
+        print("   ", a_admin)
+        print()
+        print("  Предметники (ввод по предмету):")
+        print("   ", a_teacher)
+        print()
+        print("  Классы (журнал класса):")
+        print("   ", a_journal)
+        if idx < len(lan) - 1:
+            print()
     print()
     print(line)
+    print()
+
+
+def _print_local_only(port: int) -> None:
+    a, t, j = _role_urls(f"http://127.0.0.1:{port}")
+    print("  С этого компьютера (тест, не открывайте на телефоне по этим):")
+    print("   ", a)
+    print("   ", t)
+    print("   ", j)
+    print("   то же с localhost:  http://localhost:{port}/#/…".format(port=port))
     print()
 
 
 if __name__ == "__main__":
-    _print_entry_lines(PORT)
+    _print_lan_for_others(PORT)
+    _print_local_only(PORT)
     try:
         httpd = socketserver.TCPServer(("", PORT), Handler)
     except OSError as e:
@@ -87,7 +114,7 @@ if __name__ == "__main__":
         print("Укажите другой, например: PORT=8090 python3 start.py")
         raise SystemExit(1) from e
     with httpd:
-        open_url = f"http://127.0.0.1:{PORT}/"
+        open_url = f"http://127.0.0.1:{PORT}/#/teacher"
         print("Остановка: Ctrl+C")
         try:
             webbrowser.open(open_url)
