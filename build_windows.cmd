@@ -1,30 +1,40 @@
 @echo off
-chcp 65001 >nul
+setlocal
 cd /d "%~dp0"
 echo.
-echo  Сборка SchoolAttestation.exe (нужен Python 3.10+)
+echo  Build SchoolAttestation.exe  -  Python 3.10+ required
 echo.
 
-set "PY="
-where py >nul 2>&1 && set "PY=py -3"
-if not defined PY where python >nul 2>&1 && set "PY=python"
-if not defined PY (
-  echo Не найден py или python. Установите Python с https://www.python.org/
-  pause
-  exit /b 1
+where py >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+  py -3 -m pip install -U -r requirements-build.txt
+  if errorlevel 1 exit /b 1
+  py -3 -m PyInstaller --clean --noconfirm attestation.spec
+  if errorlevel 1 (
+    echo Build failed.
+    exit /b 1
+  )
+  goto ok
 )
 
-%PY% -m pip install -U -r requirements-build.txt
-if %ERRORLEVEL% neq 0 exit /b 1
-
-%PY% -m PyInstaller --clean --noconfirm attestation.spec
-if %ERRORLEVEL% neq 0 (
-  echo Сборка не удалась.
-  exit /b 1
+where python >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+  python -m pip install -U -r requirements-build.txt
+  if errorlevel 1 exit /b 1
+  python -m PyInstaller --clean --noconfirm attestation.spec
+  if errorlevel 1 (
+    echo Build failed.
+    exit /b 1
+  )
+  goto ok
 )
+
+echo Python not found. Install from https://www.python.org/ ^& run again.
+exit /b 1
+
+:ok
 echo.
-echo  Готово: dist\SchoolAttestation.exe
-echo  Скопируйте EXE на ПК завуча — Python на том ПК не нужен.
-echo  Запуск: двойной щелчок, консоль с адресами, остановка: Ctrl+C
+echo  OK:  dist\SchoolAttestation.exe
+echo  Copy the EXE to the admin PC. No Python required there. Stop server: Ctrl+C
 echo.
 pause
