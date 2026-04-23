@@ -1,5 +1,11 @@
 node_modules/
 data/
+# Локальные / экспортные файлы БД (не в репозиторий)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 .DS_Store
 __pycache__/
 *.py[cod]

@@ -116,12 +116,11 @@ def _sort_lan_by_preference(ips: list[str]) -> list[str]:
     return sorted(u, key=key)
 
 
-def _role_urls(base: str) -> tuple[str, str, str]:
+def _role_urls(base: str) -> tuple[str, str]:
     b = base.rstrip("/")
     return (
         f"{b}/#/admin",
-        f"{b}/#/teacher",
-        f"{b}/#/journal",
+        f"{b}/",
     )
 
 
@@ -129,10 +128,10 @@ def _print_lan_for_others(port: int, private: list[str]) -> None:
     line = "─" * 64
     print()
     print(line)
-    print("  Скопируйте и разошлите (IP локальной сети, не 127.0.0.1):")
+    print("  Адреса для входа в систему:")
     print()
     if not private:
-        print("  (Не удалось определить IP вроде 192.168.x.x — включите Wi‑Fi / Ethernet,")
+        print("  (Не удалось определить IP — включите Wi‑Fi / Ethernet,")
         print("   перезапустите. До этого браузер откроется на этом ПК с запасной ссылкой.)")
         print()
         print(line)
@@ -141,7 +140,7 @@ def _print_lan_for_others(port: int, private: list[str]) -> None:
 
     for idx, ip in enumerate(private):
         base = f"http://{ip}:{port}"
-        a_admin, a_teacher, a_journal = _role_urls(base)
+        a_admin, a_teacher = _role_urls(base)
         if len(private) > 1:
             print(f"  {'─' * 6}  {ip}  {'─' * 40}")
         else:
@@ -150,16 +149,10 @@ def _print_lan_for_others(port: int, private: list[str]) -> None:
         print("  Админ (завуч, сводка, импорт XML):")
         print("   ", a_admin)
         print()
-        print("  Предметники (ввод по предмету):")
+        print("  Предметники (ввод по предмету, ввод классного журнала):")
         print("   ", a_teacher)
-        print()
-        print("  Классы (журнал класса):")
-        print("   ", a_journal)
         if idx < len(private) - 1:
             print()
-    if private and not any(p.startswith("192.168.") for p in private):
-        print()
-        print("  (Обычно дома 192.168.x.x; у вас другая частная сеть — ссылки выше корректны.)")
     print()
     print(line)
     print()
