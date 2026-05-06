@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-# Единая точка запуска: мини‑сервер + открытие браузера. База в браузере, Node не нужен.
+# Единая точка запуска: мини‑сервер + открытие браузера. Общие данные хранит Python-сервер, Node не нужен.
 # Сборка .exe: см. attestation.spec и build_windows.cmd (PyInstaller).
 import http.server
 import ipaddress
+import json
 import os
 import re
 import socket
@@ -21,13 +22,85 @@ def _application_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _data_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
 ROOT = str(_application_dir())
+STATE_FILE = _data_dir() / "attestation-state.json"
 os.chdir(ROOT)
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    server_version = "SchoolAttestationHTTP/1.0"
+
     def log_message(self, *args) -> None:
         pass  # тише
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+    def _send_json(self, status: int, payload) -> None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _is_state_api(self) -> bool:
+        return self.path.split("?", 1)[0] == "/api/state"
+
+    def do_GET(self) -> None:
+        if not self._is_state_api():
+            return super().do_GET()
+        if not STATE_FILE.exists():
+            self._send_json(200, None)
+            return
+        try:
+            with STATE_FILE.open("r", encoding="utf-8") as f:
+                self._send_json(200, json.load(f))
+        except (OSError, json.JSONDecodeError):
+            self._send_json(500, {"error": "Не удалось прочитать общие данные"})
+
+    def do_PUT(self) -> None:
+        if not self._is_state_api():
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            self._send_json(400, {"error": "Некорректная длина запроса"})
+            return
+        if length <= 0 or length > 50 * 1024 * 1024:
+            self._send_json(400, {"error": "Некорректный размер данных"})
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"error": "Некорректный JSON"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "Ожидался JSON-объект"})
+            return
+        try:
+            STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = STATE_FILE.with_suffix(".json.tmp")
+            with tmp.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+            tmp.replace(STATE_FILE)
+        except OSError:
+            self._send_json(500, {"error": "Не удалось сохранить общие данные"})
+            return
+        self._send_json(200, {"ok": True})
+
+
+class ThreadingTCPServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
 
 
 def _is_private_unicast(ip: str) -> bool:
@@ -267,7 +340,7 @@ if __name__ == "__main__":
     _print_lan_for_others(PORT, lan)
     first_lan = lan[0] if lan else None
     try:
-        httpd = socketserver.TCPServer(("", PORT), Handler)
+        httpd = ThreadingTCPServer(("", PORT), Handler)
     except OSError as e:
         print(f"Порт {PORT} занят или недоступен: {e}")
         if sys.platform == "win32":

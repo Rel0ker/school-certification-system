@@ -2,8 +2,10 @@ const SYNC_TIP_DEVICE_ONLY =
   "Данные в резерве браузера. Откройте страницу по ссылке (http://, не из папки как файл), затем нажмите «Обновить» (F5) и при необходимости введите данные снова — тогда сработает полное сохранение в память устройства.";
 
 const LS_KEY = "attestation_app_state_v1";
+const SERVER_STATE_URL = "/api/state";
 const PUBLIC_VIEW_KEY = "attestation_public_route_v1";
 const VIEWS = ["zavuch", "teacher", "advisor"];
+const STATE_KEYS = ["studentsByClass", "subjectAssignments", "classAdvisors", "subjectStats", "classGrades"];
 
 /**
  * Хвост класса после параллели: 10Б, 10БФ, 10БХБ -> 10Б. Цифры (11А1) не трогаем.
@@ -44,6 +46,11 @@ const els = {
 };
 
 let saveTimer = null;
+let pendingSaveRoots = new Set();
+let pendingSaveEntries = {
+  subjectStats: new Set(),
+  classGrades: new Set(),
+};
 
 void bootstrap();
 
@@ -67,36 +74,146 @@ async function bootstrap() {
 }
 
 async function loadPersistedState() {
-  if (typeof AtteDB === "undefined") {
-    throw new Error("AtteDB не подключен");
-  }
   setSyncStatus("pending", "…");
-  await AtteDB.init();
-  let fromDb = AtteDB.getJson();
-  if (fromDb && typeof fromDb === "object") {
-    applyStateFromPayload(fromDb);
-  } else {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      try {
-        const data = JSON.parse(raw);
-        if (data && typeof data === "object") {
-          applyStateFromPayload(data);
-          setSyncStatus("pending", "…");
-          await AtteDB.setJsonFromState(state);
-        }
-      } catch (e) {
-        console.warn(e);
-      }
+  let serverAvailable = false;
+
+  try {
+    const fromServer = await fetchServerState();
+    serverAvailable = true;
+    if (fromServer) {
+      applyStateFromPayload(fromServer);
+      await saveBrowserCopies();
+      setSyncStatus("ok", "Сохранено на сервере");
+      updateImportStatus();
+      return;
+    }
+  } catch (e) {
+    console.warn(e);
+  }
+
+  const localPayload = await readBrowserState();
+  if (localPayload) {
+    applyStateFromPayload(localPayload);
+    await saveBrowserCopies();
+    if (serverAvailable && hasStateData(state)) {
+      await saveStateToServer(STATE_KEYS);
+      setSyncStatus("ok", "Сохранено на сервере");
+      updateImportStatus();
+      return;
     }
   }
+
+  if (serverAvailable) {
+    setSyncStatus("ok", "Сервер подключен");
+  } else {
+    setSyncStatus("local", "Сохранено только на вашем устройстве", SYNC_TIP_DEVICE_ONLY);
+  }
+  updateImportStatus();
+}
+
+async function fetchServerState() {
+  const response = await fetch(SERVER_STATE_URL, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Сервер вернул ${response.status}`);
+  }
+  const data = await response.json();
+  return data && typeof data === "object" ? data : null;
+}
+
+async function saveStateToServer(changedRoots, changedEntries = {}) {
+  const latest = await fetchServerState();
+  const payload = normalizeStatePayload(latest || {});
+  const current = cloneStatePayload(state);
+  for (const root of changedRoots) {
+    if (!STATE_KEYS.includes(root)) continue;
+    if (root === "subjectStats" || root === "classGrades") {
+      const keys = changedEntries[root] || [];
+      if (keys.length) {
+        for (const key of keys) {
+          if (Object.prototype.hasOwnProperty.call(current[root], key)) {
+            payload[root][key] = current[root][key];
+          } else {
+            delete payload[root][key];
+          }
+        }
+      } else {
+        payload[root] = current[root];
+      }
+    } else {
+      payload[root] = current[root];
+    }
+  }
+
+  const response = await fetch(SERVER_STATE_URL, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`Сервер вернул ${response.status}`);
+  }
+}
+
+async function readBrowserState() {
+  if (typeof AtteDB !== "undefined") {
+    try {
+      await AtteDB.init();
+      const fromDb = AtteDB.getJson();
+      if (fromDb && typeof fromDb === "object") return fromDb;
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data && typeof data === "object" ? data : null;
+  } catch (e) {
+    console.warn(e);
+    return null;
+  }
+}
+
+async function saveBrowserCopies() {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(state));
   } catch (e) {
     console.warn(e);
   }
-  setSyncStatus("ok", "Сохранено");
-  updateImportStatus();
+  if (typeof AtteDB === "undefined" || !AtteDB) return;
+  try {
+    await AtteDB.init();
+    await AtteDB.setJsonFromState(state);
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+function normalizeStatePayload(data) {
+  return {
+    studentsByClass: data.studentsByClass || {},
+    subjectAssignments: data.subjectAssignments || [],
+    classAdvisors: data.classAdvisors || {},
+    subjectStats: data.subjectStats || {},
+    classGrades: data.classGrades || {},
+  };
+}
+
+function cloneStatePayload(source) {
+  return normalizeStatePayload(source || {});
+}
+
+function hasStateData(payload) {
+  const normalized = normalizeStatePayload(payload || {});
+  return (
+    Object.keys(normalized.studentsByClass).length > 0 ||
+    normalized.subjectAssignments.length > 0 ||
+    Object.keys(normalized.classAdvisors).length > 0 ||
+    Object.keys(normalized.subjectStats).length > 0 ||
+    Object.keys(normalized.classGrades).length > 0
+  );
 }
 
 function readLocalCacheOnly() {
@@ -149,11 +266,21 @@ function setSyncStatus(kind, text, titleText) {
   }
 }
 
-function savePersisted() {
+function savePersisted(changedRoots = STATE_KEYS, changedEntries = {}) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(state));
   } catch (e) {
     console.error(e);
+  }
+  for (const root of changedRoots) {
+    if (STATE_KEYS.includes(root)) {
+      pendingSaveRoots.add(root);
+    }
+  }
+  for (const root of ["subjectStats", "classGrades"]) {
+    for (const key of changedEntries[root] || []) {
+      pendingSaveEntries[root].add(key);
+    }
   }
   scheduleDbSave();
 }
@@ -169,7 +296,17 @@ function scheduleDbSave() {
   }, 300);
 }
 
-async function flushSaveNow() {
+async function flushSaveNow(changedRoots = [], changedEntries = {}) {
+  for (const root of changedRoots) {
+    if (STATE_KEYS.includes(root)) {
+      pendingSaveRoots.add(root);
+    }
+  }
+  for (const root of ["subjectStats", "classGrades"]) {
+    for (const key of changedEntries[root] || []) {
+      pendingSaveEntries[root].add(key);
+    }
+  }
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
@@ -178,16 +315,41 @@ async function flushSaveNow() {
 }
 
 async function persistToDatabase() {
-  if (typeof AtteDB === "undefined" || !AtteDB) {
-    setSyncStatus("local", "Сохранено только на вашем устройстве", SYNC_TIP_DEVICE_ONLY);
-    return;
-  }
+  const rootsToSave = pendingSaveRoots.size ? Array.from(pendingSaveRoots) : [];
+  const entriesToSave = {
+    subjectStats: Array.from(pendingSaveEntries.subjectStats),
+    classGrades: Array.from(pendingSaveEntries.classGrades),
+  };
+  pendingSaveRoots.clear();
+  pendingSaveEntries = {
+    subjectStats: new Set(),
+    classGrades: new Set(),
+  };
+
   try {
-    await AtteDB.init();
-    await AtteDB.setJsonFromState(state);
-    setSyncStatus("ok", "Сохранено");
+    await saveBrowserCopies();
   } catch (e) {
     console.error(e);
+  }
+
+  try {
+    if (rootsToSave.length) {
+      await saveStateToServer(rootsToSave, entriesToSave);
+    } else {
+      await fetchServerState();
+    }
+    setSyncStatus("ok", "Сохранено на сервере");
+  } catch (e) {
+    console.error(e);
+    for (const root of rootsToSave) {
+      pendingSaveRoots.add(root);
+    }
+    for (const key of entriesToSave.subjectStats) {
+      pendingSaveEntries.subjectStats.add(key);
+    }
+    for (const key of entriesToSave.classGrades) {
+      pendingSaveEntries.classGrades.add(key);
+    }
     setSyncStatus("local", "Сохранено только на вашем устройстве", SYNC_TIP_DEVICE_ONLY);
   }
 }
@@ -612,7 +774,7 @@ async function handleStudentsFile(event) {
     const rows = parseExcelXmlRows(xmlText);
     state.studentsByClass = buildStudentsByClass(rows);
     updateImportStatus();
-    savePersisted();
+    savePersisted(["studentsByClass"]);
     renderAll();
   } catch (error) {
     setStatus(`Ошибка загрузки списка учеников: ${error.message}`, "warn");
@@ -627,7 +789,7 @@ async function handleSubjectsFile(event) {
     const rows = parseExcelXmlRows(xmlText);
     state.subjectAssignments = buildSubjectAssignments(rows);
     updateImportStatus();
-    savePersisted();
+    savePersisted(["subjectAssignments"]);
     renderAll();
   } catch (error) {
     setStatus(`Ошибка загрузки нагрузки предметов: ${error.message}`, "warn");
@@ -1056,7 +1218,7 @@ function bindSubjectRowEvents(tr, teacher, className, subject, classSize) {
       const value = Number.isFinite(rawValue) && rawValue >= 0 ? rawValue : 0;
       event.target.value = String(value);
       state.subjectStats[key][field] = value;
-      savePersisted();
+      savePersisted(["subjectStats"], { subjectStats: [key] });
       renderSubjectTable();
     });
   });
@@ -1135,7 +1297,7 @@ function saveAdvisorsFromTable() {
   }
 
   state.classAdvisors = map;
-  savePersisted();
+  savePersisted(["classAdvisors"]);
   renderJournalClassSelect();
   renderClassTable();
 }
@@ -1224,8 +1386,9 @@ function renderClassTable() {
     tr.querySelectorAll("select").forEach((selectEl) => {
       selectEl.addEventListener("change", (event) => {
         const target = event.target;
+        const key = classGradeKey(target.dataset.class, target.dataset.student, target.dataset.subject);
         setClassGrade(target.dataset.class, target.dataset.student, target.dataset.subject, target.value);
-        savePersisted();
+        savePersisted(["classGrades"], { classGrades: [key] });
       });
     });
     els.classTableBody.appendChild(tr);
@@ -1444,7 +1607,7 @@ async function importJsonBackup(event) {
     } catch (e) {
       console.error(e);
     }
-    await flushSaveNow();
+    await flushSaveNow(STATE_KEYS);
     updateImportStatus();
     renderAll();
   } catch (error) {
