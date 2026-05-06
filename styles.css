@@ -641,6 +641,64 @@ select.input-control {
   white-space: nowrap;
 }
 
+#subjectTable th:nth-child(1),
+#subjectTable td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 7rem;
+  min-width: 7rem;
+  max-width: 7rem;
+  background: #fff;
+}
+
+#subjectTable th:nth-child(2),
+#subjectTable td:nth-child(2) {
+  position: sticky;
+  left: 7rem;
+  z-index: 2;
+  width: 13rem;
+  min-width: 13rem;
+  max-width: 13rem;
+  background: #fff;
+  box-shadow: 6px 0 8px -8px rgba(15, 23, 42, 0.45);
+}
+
+#subjectTable thead th:nth-child(1),
+#subjectTable thead th:nth-child(2) {
+  z-index: 4;
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+}
+
+#subjectTable tfoot td:nth-child(1),
+#subjectTable tfoot td:nth-child(2) {
+  position: static;
+  left: auto;
+  z-index: auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  background: #f8fafc;
+  box-shadow: none;
+}
+
+#classTable th:first-child,
+#classTable td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 16rem;
+  min-width: 16rem;
+  max-width: 16rem;
+  background: #fff;
+  box-shadow: 6px 0 8px -8px rgba(15, 23, 42, 0.45);
+}
+
+#classTable thead th:first-child {
+  z-index: 4;
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+}
+
 .progress-wrap {
   position: relative;
   display: flex;
@@ -1058,6 +1116,18 @@ select.input-control {
   .data-table thead th {
     position: static !important;
     background: #f1f5f9 !important;
+  }
+
+  #subjectTable th:nth-child(1),
+  #subjectTable td:nth-child(1),
+  #subjectTable th:nth-child(2),
+  #subjectTable td:nth-child(2),
+  #classTable th:first-child,
+  #classTable td:first-child {
+    position: static !important;
+    left: auto !important;
+    z-index: auto !important;
+    box-shadow: none !important;
   }
 
   .data-table--tight {
